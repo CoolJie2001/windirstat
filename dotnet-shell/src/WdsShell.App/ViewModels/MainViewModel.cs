@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Runtime.CompilerServices;
 using Avalonia.Media;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -26,6 +27,12 @@ public sealed partial class MainViewModel : ObservableObject
     private IDiskScanEngine? _engine;
     private DiskNode? _currentNode; // null = 扫描根
     private DateTime _lastSnapshotAt = DateTime.UtcNow;
+
+    // 列表行按 DiskNode 复用，配合原地属性通知做增量 reconcile，
+    // 绝不再 Rows.Clear()（整表 Reset 是悬停/选中框“上下跳动”的根因）。
+    private readonly Dictionary<DiskNode, NodeRow> _rowByNode = new();
+    private long _lastSig;
+    private bool _force = true; // 强制刷新一次（导航、扫描状态变化后置位）
 
     public ObservableCollection<DriveInfoView> Drives { get; } = [];
     public ObservableCollection<NodeRow> Rows { get; } = [];
@@ -62,6 +69,7 @@ public sealed partial class MainViewModel : ObservableObject
             : new ManagedWalkEngine();
         _engine.StateChanged += OnEngineStateChanged;
         _currentNode = null;
+        _force = true;
 
         try
         {
@@ -85,6 +93,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (_currentNode is null) return; // 已在扫描根
         var parent = _currentNode.Parent;
         _currentNode = parent is null || ReferenceEquals(parent, _engine?.Root) ? null : parent;
+        _force = true;
         RefreshSnapshot();
     }
 
@@ -93,6 +102,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (node is null || node.Kind != NodeKind.Directory) return;
         _currentNode = node;
+        _force = true;
         RefreshSnapshot();
     }
 
@@ -107,6 +117,7 @@ public sealed partial class MainViewModel : ObservableObject
                 ScanState.Failed => "扫描失败",
                 _ => StatusText,
             };
+            _force = true;
             RefreshSnapshot();
         });
 
@@ -120,6 +131,13 @@ public sealed partial class MainViewModel : ObservableObject
 
         var scope = _currentNode ?? root;
 
+        // 空闲且数据自上次快照无变化时直接跳过：杜绝每 250ms 无谓重绘导致悬停高亮动画被重置。
+        var sig = root.PhysicalSize * 31 + root.FileCount * 17 + root.DirCount
+                  + ((long)scope.ChildCount << 40) ^ RuntimeHelpers.GetHashCode(scope);
+        if (!_force && !IsScanning && sig == _lastSig) return;
+        _force = false;
+        _lastSig = sig;
+
         // 下行速率估算（快照差分）
         var now = DateTime.UtcNow;
         var dt = (now - _lastSnapshotAt).TotalSeconds;
@@ -131,30 +149,37 @@ public sealed partial class MainViewModel : ObservableObject
             _lastSnapshotAt = now;
         }
 
-        // ---- 列表行 ----
+        // ---- 列表行（按 DiskNode 复用行对象、原地更新字段，绝不整表 Clear） ----
         var children = scope.SnapshotChildren();
         var scopeSize = Math.Max(1, scope.PhysicalSize);
-        Rows.Clear();
+        var target = new List<NodeRow>(Math.Min(children.Length, MaxRows));
         foreach (var child in children.Take(MaxRows))
         {
+            if (!_rowByNode.TryGetValue(child, out var row))
+            {
+                row = new NodeRow { Node = child, IsDirectory = child.IsDirectory };
+                _rowByNode[child] = row;
+            }
+
             uint rgb = child.Kind switch
             {
                 NodeKind.File => ExtensionPalette.GetColor(child.Extension),
                 NodeKind.FreeSpace => 0x3F3F46,
                 _ => ExtensionPalette.GetDirectoryTint(child, 0),
             };
-            Rows.Add(new NodeRow
+            row.Name = child.Name;
+            row.SizeText = SizeFormat.Format(child.PhysicalSize);
+            row.PercentText = $"{child.PhysicalSize * 100.0 / scopeSize:0.##}%";
+            row.MetaText = child.IsDirectory ? $"{child.FileCount:N0} 文件" : string.Empty;
+            if (rgb != row.LastRgb)
             {
-                Node = child,
-                Name = child.Name,
-                IsDirectory = child.IsDirectory,
-                SizeText = SizeFormat.Format(child.PhysicalSize),
-                PercentText = $"{child.PhysicalSize * 100.0 / scopeSize:0.##}%",
-                MetaText = child.IsDirectory ? $"{child.FileCount:N0} 文件" : string.Empty,
-                Brush = new SolidColorBrush(Avalonia.Media.Color.FromRgb(
-                    (byte)((rgb >> 16) & 0xFF), (byte)((rgb >> 8) & 0xFF), (byte)(rgb & 0xFF))),
-            });
+                row.LastRgb = rgb;
+                row.Brush = new SolidColorBrush(Avalonia.Media.Color.FromRgb(
+                    (byte)((rgb >> 16) & 0xFF), (byte)((rgb >> 8) & 0xFF), (byte)(rgb & 0xFF)));
+            }
+            target.Add(row);
         }
+        ReconcileRows(target);
 
         // ---- treemap ----
         var tiles = new List<TreemapTile>(256);
@@ -183,6 +208,40 @@ public sealed partial class MainViewModel : ObservableObject
                      $"文件 {root.FileCount:N0} · 目录 {root.DirCount:N0} · " +
                      $"已用 {SizeFormat.Format(root.PhysicalSize - (free?.PhysicalSize ?? 0))} · " +
                      $"{SizeFormat.Format((long)Math.Max(0, SpeedBytesPerSec))}/s";
+    }
+
+    /// <summary>
+    /// 将 <see cref="Rows"/> 就地调整到与 <paramref name="target"/> 相同的成员与顺序，
+    /// 仅用 Add/Remove/Move 做最小改动——保留行容器实例，避免整表 Reset 引发悬停/选中框闪烁。
+    /// 当扫描结束后集合稳定时，本方法不产生任何变更事件。
+    /// </summary>
+    private void ReconcileRows(IReadOnlyList<NodeRow> target)
+    {
+        var keep = new HashSet<NodeRow>(target);
+        for (var i = Rows.Count - 1; i >= 0; i--)
+        {
+            var stale = Rows[i];
+            if (keep.Contains(stale)) continue;
+            _rowByNode.Remove(stale.Node);
+            Rows.RemoveAt(i);
+        }
+
+        for (var i = 0; i < target.Count; i++)
+        {
+            if (i < Rows.Count && ReferenceEquals(Rows[i], target[i])) continue;
+            var moved = -1;
+            for (var j = i + 1; j < Rows.Count; j++)
+                if (ReferenceEquals(Rows[j], target[i])) { moved = j; break; }
+            if (moved >= 0) Rows.Move(moved, i);
+            else Rows.Insert(i, target[i]);
+        }
+
+        while (Rows.Count > target.Count)
+        {
+            var extra = Rows[^1];
+            Rows.RemoveAt(Rows.Count - 1);
+            _rowByNode.Remove(extra.Node);
+        }
     }
 
     private static string BuildBreadcrumb(DiskNode node)

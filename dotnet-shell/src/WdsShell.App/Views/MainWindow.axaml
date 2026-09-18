@@ -5,6 +5,8 @@
         x:Class="WdsShell.App.Views.MainWindow"
         Width="1240" Height="800"
         MinWidth="800" MinHeight="500"
+        TransparencyLevelHint="Mica, AcrylicBlur, Transparent"
+        Background="Transparent"
         Title="WDS Shell — 磁盘空间可视化 (Preview)">
 
   <Design.DataContext>
@@ -31,8 +33,10 @@
       </StackPanel>
     </Border>
 
-    <!-- 底部状态栏 -->
-    <Border DockPanel.Dock="Bottom" Padding="10,4" Background="#1B1B1F">
+    <!-- 底部状态栏：去掉硬编码的 #1B1B1F 深色背景（浅色主题下会黑底黑字看不清），
+         改为继承主题前景色 + 透明背景（透出 Mica），与顶部工具栏同一机制，两种主题下文字均清晰。 -->
+    <Border DockPanel.Dock="Bottom" Padding="10,4"
+            BorderBrush="{DynamicResource SystemBaseLowColor}" BorderThickness="0,1,0,0">
       <TextBlock Text="{Binding StatusText}" FontSize="12" Opacity="0.9" />
     </Border>
 
