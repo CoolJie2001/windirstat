@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>WdsShell.Core</RootNamespace>
+    <Description>Shell 领域模型与扫描引擎抽象。不依赖 UI 框架，也不依赖具体引擎实现（托管或原生）。</Description>
+  </PropertyGroup>
+</Project>

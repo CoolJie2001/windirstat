@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>WdsShell.Interop</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>wdscore.dll（上游 C++ core 裁剪产物）的 C ABI 绑定层。当前为契约骨架，待 native 构建落地。</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\WdsShell.Core\WdsShell.Core.csproj" />
+  </ItemGroup>
+</Project>

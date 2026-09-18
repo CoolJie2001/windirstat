@@ -1,0 +1,9 @@
+bin/
+obj/
+*.user
+.vs/
+[Tt]est[Rr]esults/
+artifacts/
+native/**/wdscore.dll
+native/**/*.pdb
+native/**/*.lib

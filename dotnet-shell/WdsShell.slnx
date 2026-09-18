@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WdsShell.App/WdsShell.App.csproj" />
+    <Project Path="src/WdsShell.Core/WdsShell.Core.csproj" />
+    <Project Path="src/WdsShell.Interop/WdsShell.Interop.csproj" />
+  </Folder>
+</Solution>
