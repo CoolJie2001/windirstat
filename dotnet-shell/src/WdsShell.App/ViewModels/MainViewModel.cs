@@ -76,6 +76,9 @@ public sealed partial class MainViewModel : ObservableObject
     // 树侧的"哪一行被选中"由视图自己持有（TreeDataGrid 的 selection model），不进 VM。
     [ObservableProperty] private DiskNode? _selectedNode;
 
+    /// <summary>区块图缩放后请求视图展开并选中对应的目录树节点。</summary>
+    public event Action<DiskNode>? TreeRevealRequested;
+
     /// <summary>
     /// 区块图上指针停着的瓦片。对应上游 CGraphView::m_hoverItem：只覆写状态栏文字，
     /// 绝不改选中态、也不进目录树（UpdatePaneText 里 hover 分支优先于 selection 分支）。
@@ -229,7 +232,18 @@ public sealed partial class MainViewModel : ObservableObject
             return Task.CompletedTask;
         }
 
+        SelectDriveForPath(fullPath);
         return ScanPathAsync(fullPath);
+    }
+
+    private void SelectDriveForPath(string path)
+    {
+        var root = System.IO.Path.GetPathRoot(path);
+        if (string.IsNullOrEmpty(root)) return;
+
+        SelectedDrive = Drives.FirstOrDefault(d =>
+            string.Equals(d.Info.RootDirectory.FullName, root, StringComparison.OrdinalIgnoreCase))
+            ?? SelectedDrive;
     }
 
     private async Task ScanPathAsync(string path)
@@ -275,8 +289,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void StopScan() => _engine?.StopScan();
 
     /// <summary>
-    /// zoom in 到"树里当前选中的项"，对应上游 CWinDirStatModel::OnTreeMapZoomIn：
-    /// 文件取其父目录，目录取自身，根项等价于不缩放。绝不反向改动选中项。
+    /// 以当前选中项为区块图根目录：文件取其父目录，目录取自身。
     /// </summary>
     [RelayCommand]
     private void ZoomInSelected()
@@ -287,29 +300,43 @@ public sealed partial class MainViewModel : ObservableObject
         ZoomTo(node.Kind == NodeKind.File ? node.Parent : node);
     }
 
-    /// <summary>zoom out 一级。已在扫描根时不动作，同上游 ID_TREEMAP_ZOOMOUT 要求 IsZoomed。</summary>
+    /// <summary>返回当前区块图根目录的上一级，并同步定位目录树。</summary>
     [RelayCommand]
     private void ZoomOut()
     {
         if (_zoomNode is null) return;
         var parent = _zoomNode.Parent;
         _zoomNode = parent is null || ReferenceEquals(parent, _rootNode) ? null : parent;
+        RequestTreeReveal(parent is null || ReferenceEquals(parent, _rootNode) ? _rootNode : parent);
         _force = true;
         RefreshSnapshot();
     }
 
     /// <summary>
-    /// 切换区块图的基准子树（treemap 双击、工具栏缩放都走这里）。
-    /// 只改 zoom 根，绝不改动选中项 —— 选中与缩放是两套状态，同上游。
-    /// 目标已是当前基准时不动作，同 CTreeMapView::DrillDown 的前置判断。
+    /// 切换区块图的基准子树（区块图双击、工具栏缩放都走这里），并同步目录树。
     /// </summary>
     public void ZoomTo(DiskNode? node)
     {
         if (node is null || node.Kind != NodeKind.Directory) return;
-        if (ReferenceEquals(node, _zoomNode ?? _rootNode)) return;
-        _zoomNode = node;
+        var nextZoomNode = ReferenceEquals(node, _rootNode) ? null : node;
+        if (ReferenceEquals(nextZoomNode, _zoomNode))
+        {
+            RequestTreeReveal(node);
+            return;
+        }
+
+        _zoomNode = nextZoomNode;
+        RequestTreeReveal(node);
         _force = true;
         RefreshSnapshot();
+    }
+
+    private void RequestTreeReveal(DiskNode? node)
+    {
+        if (node is null) return;
+        var changed = !ReferenceEquals(SelectedNode, node);
+        SelectedNode = node;
+        if (!changed) TreeRevealRequested?.Invoke(node);
     }
 
     /// <summary>

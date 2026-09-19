@@ -26,16 +26,18 @@
         <StackPanel Orientation="Horizontal" Spacing="8">
           <ComboBox ItemsSource="{Binding Drives}" SelectedItem="{Binding SelectedDrive}"
                     Width="230" IsEnabled="{Binding !IsScanning}" />
-          <Button Content="扫描" Command="{Binding ScanCommand}" IsEnabled="{Binding !IsScanning}" />
-          <Button Content="停止" Command="{Binding StopScanCommand}" IsEnabled="{Binding IsScanning}" />
-          <Button Content="⬇ 放大到选中项" Command="{Binding ZoomInSelectedCommand}"
-                  ToolTip.Tip="对应上游 Tree Map → Zoom In：以树中当前选中项为区块图基准（文件则取其父目录）" />
-          <Button Content="⬆ 上一级" Command="{Binding ZoomOutCommand}"
-                  ToolTip.Tip="对应上游 Tree Map → Zoom Out" />
+          <Button Content="扫描" Command="{Binding ScanCommand}" IsEnabled="{Binding !IsScanning}"
+                  ToolTip.Tip="扫描所选磁盘" />
+          <Button Content="停止" Command="{Binding StopScanCommand}" IsEnabled="{Binding IsScanning}"
+                  ToolTip.Tip="停止当前扫描" />
+          <Button Content="⬇ 进入选中目录" Command="{Binding ZoomInSelectedCommand}"
+                  ToolTip.Tip="以当前选中目录为区块图根目录；选中文件时进入其所在目录" />
+          <Button Content="⬆ 返回上级目录" Command="{Binding ZoomOutCommand}"
+                  ToolTip.Tip="返回当前区块图目录的上一级" />
           <ProgressBar IsIndeterminate="{Binding IsScanning}" Width="120" Height="8"
                        VerticalAlignment="Center" IsVisible="{Binding IsScanning}" />
           <Button Content="⚙ 设置…" Click="OnOpenSettings"
-                  ToolTip.Tip="外观、目录树列、区块图与扫描的基础设置（对应上游 工具 → 选项）" />
+                  ToolTip.Tip="打开外观、目录树、区块图、扫描和系统集成设置" />
         </StackPanel>
         <TextBlock Text="{Binding Breadcrumb}" FontSize="12" Opacity="0.8"
                    Margin="2,0,0,0" TextTrimming="CharacterEllipsis" />
@@ -131,9 +133,9 @@
                        Opacity="0.8" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                        IsVisible="{Binding IsCleanupBusy}" />
             <Button Grid.Column="4" Content="全选" Command="{Binding SelectAllCleanupCommand}"
-                    IsEnabled="{Binding !IsCleanupBusy}" />
+                    IsEnabled="{Binding !IsCleanupBusy}" ToolTip.Tip="勾选全部清理候选文件" />
             <Button Grid.Column="5" Content="清除选择" Command="{Binding ClearCleanupSelectionCommand}"
-                    IsEnabled="{Binding !IsCleanupBusy}" />
+                    IsEnabled="{Binding !IsCleanupBusy}" ToolTip.Tip="取消选择所有清理候选文件" />
             <Button Grid.Column="6" Content="{Binding CleanupActionText}"
                     Command="{Binding MoveSelectedToRecycleBinCommand}"
                     IsEnabled="{Binding CanMoveSelectedToRecycleBin}"

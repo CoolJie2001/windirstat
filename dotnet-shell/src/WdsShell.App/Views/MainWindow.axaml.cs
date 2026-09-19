@@ -29,7 +29,11 @@ public partial class MainWindow : Window
     // 选中态在"树 → VM"与"VM → 树"两个方向之间来回传播，用这个开关掐掉回环。
     private bool _syncingSelection;
 
-    public MainWindow(string? initialScanPath = null)
+    public MainWindow() : this(null)
+    {
+    }
+
+    public MainWindow(string? initialScanPath)
     {
         _initialScanPath = initialScanPath;
         // 必须用源生成器产出的 InitializeComponent：它除加载 XAML 外还会给 x:Name 字段赋值。
@@ -40,6 +44,7 @@ public partial class MainWindow : Window
 
         Treemap.ZoomRequested += _vm.ZoomTo;
         _vm.PropertyChanged += OnViewModelPropertyChanged;
+        _vm.TreeRevealRequested += OnTreeRevealRequested;
         FileTree.DoubleTapped += OnFileTreeDoubleTapped;
 
         _rowSelection = RebuildFileTree();
@@ -58,6 +63,7 @@ public partial class MainWindow : Window
         {
             AppSettings.Current.PropertyChanged -= OnSettingsChanged;
             _vm.PropertyChanged -= OnViewModelPropertyChanged;
+            _vm.TreeRevealRequested -= OnTreeRevealRequested;
             _vm.Dispose();
         };
     }
@@ -177,7 +183,11 @@ public partial class MainWindow : Window
         for (var i = 1; i < path.Count; i++)
             source.Expand(path.Slice(0, i)); // 只展开祖先，选中项自身的展开态保持原样
 
-        if (selection.IsSelected(path)) return;
+        if (selection.IsSelected(path))
+        {
+            BringIntoView(path);
+            return;
+        }
 
         _syncingSelection = true;
         selection.Select(path);
@@ -253,6 +263,8 @@ public partial class MainWindow : Window
         if (e.PropertyName != nameof(MainViewModel.SelectedNode) || _syncingSelection) return;
         if (_vm.SelectedNode is { } node) SelectInTree(_rowSelection, node);
     }
+
+    private void OnTreeRevealRequested(DiskNode node) => SelectInTree(_rowSelection, node);
 
 
     /// <summary>
