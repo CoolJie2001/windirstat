@@ -81,3 +81,24 @@ public static class SizeFormat
         return u == 0 ? $"{(long)v} {units[u]}" : $"{v:0.##} {units[u]}";
     }
 }
+
+/// <summary>
+/// 目录树"占比"列的取色：按行缩进深度循环，8 色一组。
+/// 数值逐个取自上游 COptions::FileTreeColors（Options.h:235-245），
+/// 循环个数上限 = COptions::FileTreeColorCount 默认 8，非扩展名色。
+/// </summary>
+public static class TreeBarPalette
+{
+    private static readonly uint[] Colors =
+    [
+        0x40408C, 0x8C4040, 0x408C40, 0x8C8C40,
+        0x0000FF, 0xFF0000, 0x00FF00, 0xFFFF00,
+    ];
+
+    public const int ColorCount = 8;
+
+    /// <summary>上游 COptions::SizeProportionIndent 默认值（px）：每深一级，占比条右移量。</summary>
+    public const int SizeProportionIndent = 16;
+
+    public static uint ColorFor(int indent) => Colors[((indent % ColorCount) + ColorCount) % ColorCount];
+}

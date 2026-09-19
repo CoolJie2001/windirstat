@@ -46,6 +46,12 @@ public interface IDiskScanEngine : IDisposable
     /// <summary>状态变化（Completed/Failed 等里程碑事件）。可能来自后台线程。</summary>
     event EventHandler<ScanState>? StateChanged;
 
+    /// <summary>
+    /// 每发现一个文件就推送一次。回调运行在扫描线程上，订阅者必须快速返回。
+    /// 需要较重处理的消费者应自行排队。
+    /// </summary>
+    event Action<ScanFile>? FileDiscovered;
+
     Task StartScanAsync(string path, CancellationToken ct = default);
     void StopScan();
 }

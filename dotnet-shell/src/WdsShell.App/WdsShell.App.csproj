@@ -8,9 +8,14 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.5" />
+    <!-- 11.2.0 起 TreeDataGrid 转为商业授权（构建期强制校验 <AvaloniaUILicenseKey />，否则 AVLIC0001 直接失败）。
+         11.1.1 是最后一个免密钥版本，与 Avalonia 11.3 运行时兼容；若日后拿到社区/商业密钥，改回 11.3.x 即可。 -->
+    <PackageReference Include="Avalonia.Controls.TreeDataGrid" Version="11.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.5" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.5" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.5" />
+    <!-- Avalonia.FreeDesktop 11.3.5 brings in 0.21.2, which is flagged by NU1903. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
   </ItemGroup>
   <ItemGroup>

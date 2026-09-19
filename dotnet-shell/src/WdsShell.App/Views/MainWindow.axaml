@@ -2,9 +2,11 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:WdsShell.App.ViewModels"
         xmlns:controls="clr-namespace:WdsShell.App.Controls"
+        xmlns:tdg="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.TreeDataGrid"
         x:Class="WdsShell.App.Views.MainWindow"
         Width="1240" Height="800"
         MinWidth="800" MinHeight="500"
+        WindowStartupLocation="CenterScreen"
         TransparencyLevelHint="Mica, AcrylicBlur, Transparent"
         Background="Transparent"
         Title="WDS Shell — 磁盘空间可视化 (Preview)">
@@ -15,61 +17,140 @@
 
   <DockPanel>
 
-    <!-- 顶部工具栏 -->
-    <Border DockPanel.Dock="Top" Padding="10,8" BorderThickness="0,0,0,1"
-            BorderBrush="{DynamicResource SystemBaseLowColor}">
+    <!-- 顶部工具栏：半透明底 + 下描边，让窗口材质透上来形成层次 -->
+    <Border DockPanel.Dock="Top" Padding="10,8"
+            Background="{DynamicResource ChromeBrush}"
+            BorderBrush="{DynamicResource CardStrokeBrush}" BorderThickness="0,0,0,1">
       <StackPanel Spacing="6">
         <StackPanel Orientation="Horizontal" Spacing="8">
           <ComboBox ItemsSource="{Binding Drives}" SelectedItem="{Binding SelectedDrive}"
                     Width="230" IsEnabled="{Binding !IsScanning}" />
           <Button Content="扫描" Command="{Binding ScanCommand}" IsEnabled="{Binding !IsScanning}" />
           <Button Content="停止" Command="{Binding StopScanCommand}" IsEnabled="{Binding IsScanning}" />
-          <Button Content="⬆ 上一级" Command="{Binding NavigateUpCommand}" />
+          <Button Content="⬇ 放大到选中项" Command="{Binding ZoomInSelectedCommand}"
+                  ToolTip.Tip="对应上游 Tree Map → Zoom In：以树中当前选中项为区块图基准（文件则取其父目录）" />
+          <Button Content="⬆ 上一级" Command="{Binding ZoomOutCommand}"
+                  ToolTip.Tip="对应上游 Tree Map → Zoom Out" />
           <ProgressBar IsIndeterminate="{Binding IsScanning}" Width="120" Height="8"
                        VerticalAlignment="Center" IsVisible="{Binding IsScanning}" />
+          <Button Content="⚙ 设置…" Click="OnOpenSettings"
+                  ToolTip.Tip="外观、目录树列、区块图与扫描的基础设置（对应上游 工具 → 选项）" />
         </StackPanel>
         <TextBlock Text="{Binding Breadcrumb}" FontSize="12" Opacity="0.8"
-                   TextTrimming="CharacterEllipsis" />
+                   Margin="2,0,0,0" TextTrimming="CharacterEllipsis" />
       </StackPanel>
     </Border>
 
-    <!-- 底部状态栏：去掉硬编码的 #1B1B1F 深色背景（浅色主题下会黑底黑字看不清），
-         改为继承主题前景色 + 透明背景（透出 Mica），与顶部工具栏同一机制，两种主题下文字均清晰。 -->
-    <Border DockPanel.Dock="Bottom" Padding="10,4"
-            BorderBrush="{DynamicResource SystemBaseLowColor}" BorderThickness="0,1,0,0">
-      <TextBlock Text="{Binding StatusText}" FontSize="12" Opacity="0.9" />
+    <!-- 底部状态栏：与工具栏同一机制，两种主题下文字都清晰。
+         四格语义照上游 CStatusBar 的 PaneId{Idle,Size,Ram}（MainFrame.Commands.cpp:330-392）：
+         首格 = 悬停项或选中项的完整路径（上游同样是 hover 压过 selection），
+         次格 = 该项大小（上游定宽 175px，这里给 190 DIP 免得数字变长把右两格挤来挤去）。 -->
+    <Border DockPanel.Dock="Bottom" Padding="10,5"
+            Background="{DynamicResource ChromeBrush}"
+            BorderBrush="{DynamicResource CardStrokeBrush}" BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
+        <TextBlock Grid.Column="0" Text="{Binding SelectionPathText}" FontSize="12"
+                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectionPathText}"
+                   VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding SelectionSizeText}" FontSize="12" Opacity="0.9"
+                   Width="190" TextAlignment="Right" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="2" Text="{Binding IdleHint}" FontSize="12" Opacity="0.55"
+                   VerticalAlignment="Center" />
+        <TextBlock Grid.Column="3" Text="{Binding StatusText}" FontSize="12" Opacity="0.9"
+                   VerticalAlignment="Center" />
+      </Grid>
     </Border>
 
-    <!-- 主区域：左列表 | 分割条 | 右可视化 -->
-    <Grid ColumnDefinitions="420,Auto,*">
+    <!-- 主区域：上方是目录树与区块图，下方是扫描结果的清理过滤列表。 -->
+    <Grid RowDefinitions="*,260" Margin="8,6" RowSpacing="6">
+      <Grid Grid.Row="0" x:Name="MainGrid" ColumnDefinitions="620,Auto,*">
 
-      <ListBox Grid.Column="0" x:Name="FileList"
-               ItemsSource="{Binding Rows}"
-               SelectionMode="Single"
-               DoubleTapped="OnFileListDoubleTapped"
-               Padding="4">
-        <ListBox.ItemTemplate>
-          <DataTemplate>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <Rectangle Width="12" Height="12" RadiusX="2" RadiusY="2"
-                         Fill="{Binding Brush}" VerticalAlignment="Center" />
-              <TextBlock Text="{Binding Name}" Width="200" TextTrimming="CharacterEllipsis" />
-              <TextBlock Text="{Binding SizeText}" Width="86" TextAlignment="Right" Opacity="0.9" />
-              <TextBlock Text="{Binding PercentText}" Width="48" TextAlignment="Right" Opacity="0.7" />
-              <TextBlock Text="{Binding MetaText}" Opacity="0.55" />
-            </StackPanel>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
+        <Border Grid.Column="0" CornerRadius="8" Padding="2"
+                Background="{DynamicResource CardBrush}"
+                BorderBrush="{DynamicResource CardStrokeBrush}" BorderThickness="1">
+          <!-- 列定义与 Source 在 code-behind 建：TreeDataGrid 11.1 没有 ItemsSource，
+               必须显式构造 HierarchicalTreeDataGridSource。
+               Background 置透明，让卡片的半透明底透出来，否则控件默认铺一层不透明底色。 -->
+          <tdg:TreeDataGrid x:Name="FileTree"
+                            Background="Transparent"
+                            CanUserSortColumns="False" />
+        </Border>
 
-      <GridSplitter Grid.Column="1" Width="4" />
+        <GridSplitter Grid.Column="1" Width="10" Background="Transparent" />
 
-      <Grid Grid.Column="2" RowDefinitions="22,*">
-        <controls:ExtensionBarControl Grid.Row="0" x:Name="ExtensionBar"
-                                      Segments="{Binding ExtensionSegments}" />
-        <controls:TreemapControl Grid.Row="1" x:Name="Treemap"
-                                 Tiles="{Binding TreemapTiles}" />
+        <Border Grid.Column="2" CornerRadius="8" Padding="8"
+                Background="{DynamicResource CardBrush}"
+                BorderBrush="{DynamicResource CardStrokeBrush}" BorderThickness="1">
+          <Grid RowDefinitions="Auto,Auto,*" RowSpacing="6">
+            <!-- 扩展名色带固定 14px：24px 的高度对一条色带太厚，挤占下方区块图 -->
+            <controls:ExtensionBarControl Grid.Row="0" x:Name="ExtensionBar" Height="14"
+                                          Segments="{Binding ExtensionSegments}" />
+            <TextBlock Grid.Row="1" Text="区块图（双击下钻，单击选中）"
+                       FontSize="11" Opacity="0.55" />
+            <Panel Grid.Row="2">
+              <controls:TreemapControl x:Name="Treemap"
+                                       Tiles="{Binding TreemapTiles}"
+                                       SelectedNode="{Binding SelectedNode, Mode=TwoWay}"
+                                       HighlightDescendantNode="{Binding SelectedNode, Mode=OneWay}"
+                                       HoveredNode="{Binding HoveredNode, Mode=TwoWay}"
+                                       HighlightColor="{DynamicResource TreemapHighlightColor}"
+                                       BackdropBrush="{DynamicResource TreemapBackdropBrush}" />
+              <!-- 图内浮层：悬停/选中项就地报出名称·大小·路径，视线不用往下移。
+                   数据与状态栏同一来源（HoveredNode ?? SelectedNode），两处不会互相矛盾；
+                   IsHitTestVisible=False 让被盖住的色块照样能点，也不占区块图布局。 -->
+              <Border x:Name="SelectionPill" IsHitTestVisible="False" IsVisible="{Binding HasReportedNode}"
+                      HorizontalAlignment="Left" VerticalAlignment="Top"
+                      Margin="6" MaxWidth="560" CornerRadius="6" Padding="9,4"
+                      Background="{DynamicResource OverlayPillBrush}"
+                      BorderBrush="{DynamicResource CardStrokeBrush}" BorderThickness="1">
+                <StackPanel Spacing="1">
+                  <TextBlock Text="{Binding CaptionTitleText}" FontSize="11.5" FontWeight="SemiBold"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding CaptionPathText}" FontSize="10.5" Opacity="0.72"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Border>
+            </Panel>
+          </Grid>
+        </Border>
       </Grid>
+
+      <Border Grid.Row="1" CornerRadius="8" Padding="8"
+              Background="{DynamicResource CardBrush}"
+              BorderBrush="{DynamicResource CardStrokeBrush}" BorderThickness="1">
+        <Grid RowDefinitions="Auto,*" RowSpacing="6">
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="清理候选" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding CleanupSummary}" Opacity="0.75"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <Button Grid.Column="2" Content="全选" Command="{Binding SelectAllCleanupCommand}" />
+            <Button Grid.Column="3" Content="清除选择" Command="{Binding ClearCleanupSelectionCommand}" />
+            <Button Grid.Column="4" Content="移入回收站"
+                    Command="{Binding MoveSelectedToRecycleBinCommand}"
+                    IsEnabled="{Binding !IsCleanupBusy}" />
+          </Grid>
+
+          <ListBox Grid.Row="1" ItemsSource="{Binding CleanupItems}"
+                   Background="Transparent" BorderThickness="0">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="Auto,170,*,100,160" ColumnSpacing="8" Margin="2,1">
+                  <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                            VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Text="{Binding Category}" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Reason}" />
+                  <TextBlock Grid.Column="2" Text="{Binding PathText}" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PathText}" />
+                  <TextBlock Grid.Column="3" Text="{Binding SizeText}" VerticalAlignment="Center"
+                             HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="4" Text="{Binding ModifiedText}" VerticalAlignment="Center"
+                             HorizontalAlignment="Right" Opacity="0.75" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+      </Border>
     </Grid>
   </DockPanel>
 </Window>

@@ -24,6 +24,7 @@ public sealed unsafe class NativeWdsEngine : IDiskScanEngine
     public ScanState State => (ScanState)Volatile.Read(ref _state);
     public IReadOnlyDictionary<string, ExtensionRecord> ExtensionStats => _extensionStats;
     public event EventHandler<ScanState>? StateChanged;
+    public event Action<ScanFile>? FileDiscovered;
 
     /// <summary>native core 是否可用（dll 存在且 ABI 匹配）。App 据此决定引擎。</summary>
     public static bool IsAvailable(out string reason) => NativeMethods.TryLoad(out reason);
@@ -113,10 +114,14 @@ public sealed unsafe class NativeWdsEngine : IDiskScanEngine
                 if (_nodesByToken.TryGetValue(ev->ParentToken, out var fileParent))
                 {
                     var name = ReadString(ev->Name, ev->NameLength);
-                    var node = new DiskNode(name, NodeKind.File);
+                    var node = new DiskNode(name, NodeKind.File)
+                    {
+                        IsReparsePoint = (ev->Attributes & 0x400 /* FILE_ATTRIBUTE_REPARSE_POINT */) != 0,
+                    };
                     fileParent.Adopt(node);
                     node.RegisterFile((long)ev->PhysicalSize, (long)ev->LogicalSize);
                     ExtensionStatReporter.Report(_extensionStats, name, (long)ev->PhysicalSize);
+                    PublishFile(fileParent, node, name, ev);
                 }
                 break;
 
@@ -128,6 +133,26 @@ public sealed unsafe class NativeWdsEngine : IDiskScanEngine
             case NativeMethods.WdsEventKind.ScanState:
                 SetState((ScanState)ev->State);
                 break;
+        }
+    }
+
+    private void PublishFile(DiskNode parent, DiskNode file, string name, NativeMethods.WdsEvent* ev)
+    {
+        try
+        {
+            var attributes = (FileAttributes)ev->Attributes;
+            FileDiscovered?.Invoke(new ScanFile(
+                Path.Combine(parent.GetPath(), name),
+                name,
+                (long)ev->LogicalSize,
+                (long)ev->PhysicalSize,
+                attributes,
+                null,
+                file));
+        }
+        catch
+        {
+            // A consumer must not be able to terminate the native callback.
         }
     }
 

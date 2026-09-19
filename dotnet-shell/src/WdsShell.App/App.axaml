@@ -4,5 +4,42 @@
              RequestedThemeVariant="Default">
   <Application.Styles>
     <FluentTheme />
+    <!-- TreeDataGrid 的主题不在 Fluent 主题包内，必须单独引入，否则控件无模板、渲染为空白 -->
+    <StyleInclude Source="avares://Avalonia.Controls.TreeDataGrid/Themes/Fluent.axaml" />
   </Application.Styles>
+
+  <!-- 自己定义语义画刷，而不是引用 FluentTheme 里的 WinUI 资源键：
+       Avalonia 的 Fluent 主题并未保证 LayerFillColorDefault / CardBackgroundFillColorDefault 这些键存在，
+       DynamicResource 取不到时只会静默得到 null（画刷变透明），出问题没有任何提示。
+
+       alpha 是"材质透过率"预算，不是随便取的：这几层是叠在 DWM 材质之上的，
+       每多 10% 不透明度就多吃掉 10% 的背景模糊，铺满全屏的层尤其致命
+       （实测 #B3FFFFFF 铺满卡片时整窗只剩 23.6% 的材质能透出来）。
+       卡片感靠描边+圆角成立，不靠底色浓度。 -->
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <!-- 工具栏 / 状态栏：只留一层很浅的白，材质本身负责"浮起一层" -->
+          <SolidColorBrush x:Key="ChromeBrush" Color="#40FFFFFF" />
+          <SolidColorBrush x:Key="CardBrush" Color="#66FFFFFF" />
+          <SolidColorBrush x:Key="CardStrokeBrush" Color="#26000000" />
+          <!-- 区块图底色：色块之间的缝与空窗期透这里，之前是不透明的 #EDEDF0，把整块区域焊死了 -->
+          <SolidColorBrush x:Key="TreemapBackdropBrush" Color="#66EDEDF0" />
+          <!-- 选中态高亮色（对应上游 TreeMapHighlightColor）：浅色主题下白光晕会糊在白瓷砖上，故用深蓝 -->
+          <Color x:Key="TreemapHighlightColor">#FF0F6CBD</Color>
+          <!-- 区块图上的浮层小条：面积小，可以给足不透明度换可读性，不参与全屏材质预算 -->
+          <SolidColorBrush x:Key="OverlayPillBrush" Color="#E6FFFFFF" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="ChromeBrush" Color="#592B2B2F" />
+          <SolidColorBrush x:Key="CardBrush" Color="#592B2B2F" />
+          <SolidColorBrush x:Key="CardStrokeBrush" Color="#33FFFFFF" />
+          <SolidColorBrush x:Key="TreemapBackdropBrush" Color="#661B1B1F" />
+          <Color x:Key="TreemapHighlightColor">#FF63B9FF</Color>
+          <SolidColorBrush x:Key="OverlayPillBrush" Color="#E61B1B1F" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
 </Application>

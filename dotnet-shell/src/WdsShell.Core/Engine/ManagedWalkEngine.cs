@@ -18,12 +18,31 @@ public sealed class ManagedWalkEngine : IDiskScanEngine
     private Task? _scanTask;
     private int _state;
 
+    public ScanOptions Options { get; }
+
+    // 目录侧不排除，故 AttributesToSkip 保持最小；文件侧的隐藏/受保护按属性逐条判定。
+    private readonly EnumerationOptions _enumerate = new()
+    {
+        RecurseSubdirectories = false,
+        IgnoreInaccessible = true, // 无权限目录静默跳过（后续以 <Unknown> 伪节点呈现）
+        AttributesToSkip = FileAttributes.Temporary,
+    };
+    private readonly FileAttributes _skipFileAttributes;
+
+    public ManagedWalkEngine(ScanOptions? options = null)
+    {
+        Options = options ?? new ScanOptions();
+        if (Options.ExcludeHiddenFile) _skipFileAttributes |= FileAttributes.Hidden;
+        if (Options.ExcludeProtectedFile) _skipFileAttributes |= FileAttributes.System;
+    }
+
     public DiskNode? Root { get; private set; }
     public string? ActivePath { get; private set; }
     public ScanState State => (ScanState)Volatile.Read(ref _state);
     public IReadOnlyDictionary<string, ExtensionRecord> ExtensionStats => _extensionStats;
 
     public event EventHandler<ScanState>? StateChanged;
+    public event Action<ScanFile>? FileDiscovered;
 
     public Task StartScanAsync(string path, CancellationToken ct = default)
     {
@@ -80,12 +99,12 @@ public sealed class ManagedWalkEngine : IDiskScanEngine
             }
         }
 
-        var degree = Math.Max(2, Environment.ProcessorCount);
+        var degree = Math.Clamp(Options.WorkerThreads, 1, 16);
         var workers = Enumerable.Range(0, degree).Select(_ => Task.Run(Worker, CancellationToken.None));
         try { await Task.WhenAll(workers); }
         catch (OperationCanceledException) { /* 用户停止 */ }
 
-        if (!ct.IsCancellationRequested)
+        if (!ct.IsCancellationRequested && Options.ShowFreeSpace)
             TryAppendFreeSpace(root);
 
         SetState(ct.IsCancellationRequested ? ScanState.Stopped : ScanState.Completed);
@@ -93,15 +112,13 @@ public sealed class ManagedWalkEngine : IDiskScanEngine
 
     private void ProcessDirectory(DiskNode dir, BlockingCollection<DiskNode> work, ref int pending)
     {
-        IEnumerable<string> entries;
+        // 用 FileSystemInfo 而非路径字符串：Windows 下属性随 FindFirstFile/FindNextFile 一起返回，
+        // 省掉每个条目一次的 Directory.Exists / GetAttributes / FileInfo 系统调用。
+        IEnumerable<FileSystemInfo> entries;
         try
         {
-            entries = Directory.EnumerateFileSystemEntries(dir.GetPath(), "*", new EnumerationOptions
-            {
-                RecurseSubdirectories = false,
-                IgnoreInaccessible = true, // 无权限目录静默跳过（后续以 <Unknown> 伪节点呈现）
-                AttributesToSkip = FileAttributes.Temporary,
-            });
+            entries = new DirectoryInfo(dir.GetPath())
+                .EnumerateFileSystemInfos("*", _enumerate);
         }
         catch
         {
@@ -113,17 +130,18 @@ public sealed class ManagedWalkEngine : IDiskScanEngine
             _activeToken.ThrowIfCancellationRequested();
             try
             {
-                var isDir = Directory.Exists(entry);
-                var name = Path.GetFileName(entry);
+                var name = entry.Name;
                 if (string.IsNullOrEmpty(name)) continue;
+                var attrs = entry.Attributes;
 
-                if (isDir)
+                if ((attrs & FileAttributes.Directory) != 0)
                 {
-                    var reparse = (File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0;
-                    var child = new DiskNode(name, NodeKind.Directory) { IsReparsePoint = reparse };
+                    // 目录侧的排除只作用于"是否进入"，节点本身仍然计数，同上游 ExcludeJunctions。
+                    var linked = (attrs & FileAttributes.ReparsePoint) != 0;
+                    var child = new DiskNode(name, NodeKind.Directory) { IsReparsePoint = linked };
                     dir.Adopt(child);
                     child.RegisterDirectory();
-                    if (!reparse) // junction/symlink 不跟踪，防环（与 C++ core 策略一致）
+                    if (!(linked && Options.ExcludeLinkedDirectories))
                     {
                         Interlocked.Increment(ref pending);
                         work.Add(child);
@@ -131,15 +149,16 @@ public sealed class ManagedWalkEngine : IDiskScanEngine
                 }
                 else
                 {
-                    long logical = 0;
-                    try { logical = new FileInfo(entry).Length; } catch { }
+                    if (_skipFileAttributes != 0 && (attrs & _skipFileAttributes) != 0) continue;
+                    var file = new DiskNode(name, NodeKind.File);
+                    dir.Adopt(file);
+                    long logical = entry is FileInfo info ? info.Length : 0;
                     // 脚手架估算：物理尺寸按 4KiB 簇向上取整。真实值由 native core 提供
                     // （NTFS 下应取 $DATA allocated length，并做 WOF/压缩修正）。
                     long physical = (logical + 4095) & ~4095L;
-                    var file = new DiskNode(name, NodeKind.File);
-                    dir.Adopt(file);
                     file.RegisterFile(physical, logical);
                     ExtensionStatReporter.Report(_extensionStats, name, physical);
+                    PublishFile(entry, file, logical, physical, attrs);
                 }
             }
             catch
@@ -147,6 +166,33 @@ public sealed class ManagedWalkEngine : IDiskScanEngine
                 // 单条目失败不影响整体扫描
             }
         }
+    }
+
+    private void PublishFile(FileSystemInfo entry, DiskNode file, long logical, long physical,
+        FileAttributes attributes)
+    {
+        try
+        {
+            FileDiscovered?.Invoke(new ScanFile(
+                entry.FullName,
+                entry.Name,
+                logical,
+                physical,
+                attributes,
+                TryLastWriteTimeUtc(entry),
+                file));
+        }
+        catch
+        {
+            // A consumer must not be able to terminate the disk scan.
+        }
+    }
+
+    private static DateTime? TryLastWriteTimeUtc(FileSystemInfo entry)
+    {
+        try { return entry.LastWriteTimeUtc; }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
     }
 
     private void TryAppendFreeSpace(DiskNode root)

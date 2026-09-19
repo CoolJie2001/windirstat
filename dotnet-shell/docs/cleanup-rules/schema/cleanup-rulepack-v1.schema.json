@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wds-shell.local/schema/cleanup-rulepack-v1.schema.json",
+  "title": "WDS Shell cleanup rule pack (v1)",
+  "description": "声明式清理规则包。运行时校验器（WdsShell.Core/Cleanup）是本 Schema 的超集：Schema 管结构，运行时还管硬否决策略与形状校验（见 02-safety-policy.md）。additionalProperties 处处为 false —— 未知字段必须报错，不能静默丢弃。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "pack", "groups"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "pack": { "$ref": "#/$defs/packHeader" },
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/group" }
+    }
+  },
+  "$defs": {
+    "semverish": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+){0,3}$" },
+    "i18nKey": {
+      "type": "string",
+      "pattern": "^cleanup\\.(group|rule|reason|note)\\.[a-z0-9][a-z0-9._-]*$",
+      "description": "必须是 i18n key，不接受字面量文案"
+    },
+    "ruleId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{1,80}$",
+      "description": "全局稳定 id，append-only：一经发布不得改名或改语义"
+    },
+    "packHeader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "origin", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/ruleId" },
+        "origin": { "enum": ["builtin", "user"] },
+        "version": { "$ref": "#/$defs/semverish" },
+        "minAppVersion": { "$ref": "#/$defs/semverish" },
+        "note": { "type": "string", "maxLength": 500 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "origin": { "const": "user" } } },
+          "then": { "properties": { "id": { "pattern": "^user\\." } } }
+        }
+      ]
+    },
+    "applies": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "platform": { "type": "array", "items": { "enum": ["windows"] }, "minItems": 1 },
+        "minBuild": { "type": "integer", "minimum": 10240, "maximum": 65535 },
+        "maxBuild": { "type": "integer", "minimum": 10240, "maximum": 65535 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "verifiedOn", "consequence"],
+      "properties": {
+        "source": { "enum": ["os-documented", "vendor-doc", "observed", "community"] },
+        "url": { "type": "string", "maxLength": 500 },
+        "verifiedOn": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "verifiedOnSystems": { "type": "string", "maxLength": 300 },
+        "consequence": { "type": "string", "minLength": 10, "maxLength": 400 },
+        "testedBy": { "type": "string", "maxLength": 120 }
+      },
+      "description": "consequence 是普通用户看到的「删了会怎样」。builtin 包缺 evidence 或 verifiedOn 缺失 → 加载器强制 enabled:false 且不进简单模式"
+    },
+    "guards": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "processAnyOf": { "type": "array", "items": { "type": "string", "pattern": "^[^/\\\\:*?\"<>|]{1,60}\\.exe$" }, "maxItems": 16 },
+        "requireNoElevation": { "type": "boolean" },
+        "requireOwnerIsCurrentUser": { "type": "boolean" },
+        "volumeTypes": { "type": "array", "items": { "enum": ["fixed"] }, "description": "v1 只允许 fixed；removable/network 由硬否决闸门支配" }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "knownFolder": { "enum": ["LocalAppData", "AppData", "UserProfile", "CommonAppData", "LocalCacheData", "InternetCache", "Cookies", "History", "ResourceDir"] },
+        "env": { "enum": ["TEMP", "TMP", "LOCALAPPDATA", "APPDATA", "USERPROFILE", "ProgramData"] },
+        "literal": { "type": "string", "pattern": "^[A-Za-z]:\\\\.+", "description": "仅 origin=user 可用；仍受硬否决闸门支配" },
+        "scanSelection": { "const": true }
+      }
+    },
+    "walk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "root": { "type": "string", "maxLength": 260, "description": "相对 selector 解析结果；不得含 .. 或绝对路径" },
+        "mode": { "enum": ["self", "children", "contents"] },
+        "maxDepth": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "maxEntries": { "type": "integer", "minimum": 1, "maximum": 200000 },
+        "reparse": { "const": "never", "description": "唯一合法值；其他写法（含 always）一律加载失败" }
+      }
+    },
+    "matchClause": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "glob": { "type": "string", "maxLength": 200 },
+        "regex": { "type": "string", "maxLength": 300 },
+        "anchored": { "type": "boolean", "description": "regex 必须显式 anchored:true（默认）或显式声明 false" },
+        "name": { "type": "string", "maxLength": 120 },
+        "extension": { "type": "string", "pattern": "^\\.[A-Za-z0-9]{1,10}$" }
+      }
+    },
+    "filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minAgeDays": { "type": "integer", "minimum": 0, "maximum": 3650, "description": "缺省 30；risk=safe 时不得 <7" },
+        "maxSizeBytes": { "type": "integer", "minimum": 0 },
+        "minSizeBytes": { "type": "integer", "minimum": 0 },
+        "onlyFiles": { "type": "boolean" },
+        "onlyEmptyDirectories": { "type": "boolean" },
+        "keepNewest": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "skipAttributes": { "type": "array", "items": { "enum": ["ReadOnly", "System", "Hidden", "ReparsePoint", "Offline", "RecallOnData"] } }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "select", "walk", "match"],
+      "properties": {
+        "id": { "$ref": "#/$defs/ruleId" },
+        "note": { "$ref": "#/$defs/i18nKey" },
+        "select": { "$ref": "#/$defs/selector" },
+        "walk": { "$ref": "#/$defs/walk" },
+        "match": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/$defs/matchClause" }, "description": "空数组非法：不允许隐式全选" },
+        "exclude": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/matchClause" } },
+        "filter": { "$ref": "#/$defs/filter" }
+      }
+    },
+    "risk": { "enum": ["safe", "caution", "danger"], "description": "枚举固定：规则包不得自定义级别，也不得新增成员" },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "summary", "risk", "defaultSelected", "rules"],
+      "properties": {
+        "id": { "$ref": "#/$defs/ruleId" },
+        "title": { "$ref": "#/$defs/i18nKey" },
+        "summary": { "$ref": "#/$defs/i18nKey" },
+        "risk": { "$ref": "#/$defs/risk" },
+        "defaultSelected": { "type": "boolean" },
+        "enabled": { "type": "boolean", "default": true },
+        "applies": { "$ref": "#/$defs/applies" },
+        "guards": { "$ref": "#/$defs/guards" },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "rules": { "type": "array", "minItems": 1, "maxItems": 256, "items": { "$ref": "#/$defs/rule" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "risk": { "const": "danger" } } },
+          "then": { "properties": { "defaultSelected": { "const": false } } }
+        }
+      ]
+    }
+  }
+}
