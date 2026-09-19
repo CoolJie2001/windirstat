@@ -7,6 +7,7 @@
         ShowInTaskbar="False"
         TransparencyLevelHint="Mica, AcrylicBlur, Transparent"
         Background="Transparent"
+        Icon="avares://WdsShell.App/Assets/app.ico"
         Title="设置">
 
   <Window.Styles>

@@ -5,7 +5,16 @@
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- 资源管理器 / 快捷方式看的 exe 图标，由 tools/make_icon.py 生成（16..256 共 11 档）。
+         SDK 把它转成 csc 的 /win32icon；不设这项时 .NET 会嵌一张默认蓝色窗口图。 -->
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- 运行中标题栏与任务栏的图标走 avares://，必须显式声明为 AvaloniaResource：
+         Avalonia 的 targets 只自动收 *.axaml，不会替你嵌 Assets 下的二进制资源。
+         只列 app.ico，母图 app-master.png 是给人核对用的，不进包。 -->
+    <AvaloniaResource Include="Assets/app.ico" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.5" />
     <!-- 11.2.0 起 TreeDataGrid 转为商业授权（构建期强制校验 <AvaloniaUILicenseKey />，否则 AVLIC0001 直接失败）。

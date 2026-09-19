@@ -9,6 +9,7 @@
         WindowStartupLocation="CenterScreen"
         TransparencyLevelHint="Mica, AcrylicBlur, Transparent"
         Background="Transparent"
+        Icon="avares://WdsShell.App/Assets/app.ico"
         Title="WDS Shell — 磁盘空间可视化 (Preview)">
 
   <Design.DataContext>

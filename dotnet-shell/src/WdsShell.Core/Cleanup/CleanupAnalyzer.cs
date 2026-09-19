@@ -6,8 +6,8 @@ using WdsShell.Core.Engine;
 namespace WdsShell.Core.Cleanup;
 
 /// <summary>
-/// Consumes scan files while a scan is running. Path matching happens before
-/// the queue, so the analyzer never stores the entire disk scan in memory.
+/// Consumes scan files while a scan is running. Every eligible scan file is
+/// queued and classified by the cleanup rules on the worker thread.
 /// </summary>
 public sealed class CleanupAnalyzer : IDisposable
 {
@@ -36,7 +36,9 @@ public sealed class CleanupAnalyzer : IDisposable
         try
         {
             var normalized = file with { FullPath = Path.GetFullPath(file.FullPath) };
-            if (_rules.Any(rule => rule.IsPathAllowed(normalized.FullPath)))
+            // Every scan file reaches the classifier. Only files that match
+            // at least one cheap rule are queued for metadata revalidation.
+            if (_rules.Any(rule => rule.IsMatch(normalized)))
                 _pending.Writer.TryWrite(normalized);
         }
         catch (ArgumentException)
@@ -66,7 +68,7 @@ public sealed class CleanupAnalyzer : IDisposable
             {
                 foreach (var rule in _rules)
                 {
-                    if (!rule.IsPathAllowed(file.FullPath)) continue;
+                    if (!rule.IsMatch(file)) continue;
                     if (TryCreateCandidate(file, rule) is { } candidate &&
                         _seen.TryAdd(candidate.FullPath, 0))
                         _ready.Enqueue(candidate);
@@ -100,7 +102,11 @@ public sealed class CleanupAnalyzer : IDisposable
             var info = new FileInfo(file.FullPath);
             if (!info.Exists) return null;
             var lastWrite = info.LastWriteTimeUtc;
-            if (DateTime.UtcNow - lastWrite < TimeSpan.FromDays(rule.MinimumAgeDays)) return null;
+
+            // Re-evaluate size-based rules against the current file length so a
+            // file that changed after enumeration is not mislabeled as empty.
+            var current = file with { LogicalSize = info.Length };
+            if (!rule.IsMatch(current)) return null;
 
             return new CleanupCandidate(
                 rule.Id,
@@ -117,6 +123,14 @@ public sealed class CleanupAnalyzer : IDisposable
             return null;
         }
         catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
         {
             return null;
         }

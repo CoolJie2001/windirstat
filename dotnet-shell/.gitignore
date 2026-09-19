@@ -4,6 +4,9 @@ obj/
 .vs/
 [Tt]est[Rr]esults/
 artifacts/
+# 进程内自检 / 图标核对的临时产物目录，别混进版本库
+.probeout/
+.iconcheck/
 native/**/wdscore.dll
 native/**/*.pdb
 native/**/*.lib
