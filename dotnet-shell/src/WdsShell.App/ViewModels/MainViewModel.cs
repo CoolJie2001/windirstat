@@ -204,11 +204,36 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task ScanAsync()
-    {
-        if (SelectedDrive is null || IsScanning) return;
-        var path = SelectedDrive.Info.RootDirectory.FullName;
+    private Task ScanAsync() => SelectedDrive is { } drive
+        ? ScanFolderAsync(drive.Info.RootDirectory.FullName)
+        : Task.CompletedTask;
 
+    public Task ScanFolderAsync(string path)
+    {
+        if (IsScanning) return Task.CompletedTask;
+
+        string fullPath;
+        try
+        {
+            fullPath = System.IO.Path.GetFullPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            StatusText = $"无法扫描目标文件夹：{ex.Message}";
+            return Task.CompletedTask;
+        }
+
+        if (!Directory.Exists(fullPath))
+        {
+            StatusText = $"目标文件夹不存在：{fullPath}";
+            return Task.CompletedTask;
+        }
+
+        return ScanPathAsync(fullPath);
+    }
+
+    private async Task ScanPathAsync(string path)
+    {
         // 引擎选择：native core（wdscore.dll，NTFS MFT 秒扫）就绪后自动接管；当前回退托管引擎。
         // 扫描排除项每次开扫时从设置快照一次，扫描中途改设置不影响正在跑的这趟。
         _engine?.Dispose();

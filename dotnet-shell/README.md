@@ -46,7 +46,7 @@ dotnet-shell/
 
 ## 设置：有哪些、存哪里、材质是怎么验的
 
-工具栏"⚙ 设置…"打开分页设置表（外观 / 目录树 / 区块图 / 扫描），对应上游
+工具栏"⚙ 设置…"打开分页设置表（外观 / 目录树 / 区块图 / 扫描 / 系统集成），对应上游
 `CSettingsSheet`（`windirstat/Pages/`，8 页）。这里只做基础子集，页名与项名尽量对齐上游，
 每项在界面上都注明了它对应上游的哪个 setting。
 
@@ -93,6 +93,23 @@ dotnet-shell/
 cd dotnet-shell
 dotnet build WdsShell.slnx
 dotnet run --project src\WdsShell.App
+```
+
+发布版首次启动时会为当前 Windows 用户注册“使用 DiskScope 分析空间”文件夹右键菜单。
+右键点击文件夹后，应用会打开并直接扫描该文件夹，同时识别 0 字节文件和典型垃圾扩展名。
+Windows 10 直接显示在文件夹菜单中；Windows 11 的传统 Shell 菜单通常位于“显示更多选项”中。
+也可以手动注册或移除菜单：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\install-context-menu.ps1 `
+  -ExecutablePath "C:\Path\To\DiskScope.exe"
+powershell -ExecutionPolicy Bypass -File tools\install-context-menu.ps1 -Uninstall
+```
+
+命令行也支持直接指定扫描目录：
+
+```cmd
+DiskScope.exe --scan-folder "D:\Projects\My Folder"
 ```
 
 - ✅ 选驱动器 → 递归扫描（托管引擎，真实文件系统），扫描期区块图 / 目录树 / 扩展名条实时刷新

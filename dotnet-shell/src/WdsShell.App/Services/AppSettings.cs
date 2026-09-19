@@ -54,6 +54,7 @@ public sealed partial class AppSettings : ObservableObject
     [ObservableProperty] private bool _excludeProtectedFile;
     [ObservableProperty] private bool _excludeLinkedDirectories = true;
     [ObservableProperty] private int _scanningThreads = 4;
+    [ObservableProperty] private bool _enableContextMenu = true;
 
     public ScanOptions ToScanOptions() => new()
     {
@@ -82,6 +83,7 @@ public sealed partial class AppSettings : ObservableObject
         ExcludeProtectedFile = d.ExcludeProtectedFile;
         ExcludeLinkedDirectories = d.ExcludeLinkedDirectories;
         ScanningThreads = d.ScanningThreads;
+        EnableContextMenu = d.EnableContextMenu;
     }
 
     private static AppSettings Load()
@@ -134,6 +136,7 @@ public sealed partial class AppSettings : ObservableObject
             case nameof(ExcludeProtectedFile): ExcludeProtectedFile = ParseBool(value); break;
             case nameof(ExcludeLinkedDirectories): ExcludeLinkedDirectories = ParseBool(value); break;
             case nameof(ScanningThreads): ScanningThreads = ParseInt(value, 1, 16); break;
+            case nameof(EnableContextMenu): EnableContextMenu = ParseBool(value); break;
         }
     }
 
@@ -182,6 +185,7 @@ public sealed partial class AppSettings : ObservableObject
         yield return $"{nameof(ExcludeProtectedFile)}={B(ExcludeProtectedFile)}";
         yield return $"{nameof(ExcludeLinkedDirectories)}={B(ExcludeLinkedDirectories)}";
         yield return $"{nameof(ScanningThreads)}={ScanningThreads}";
+        yield return $"{nameof(EnableContextMenu)}={B(EnableContextMenu)}";
     }
 
     private static string B(bool value) => value ? "1" : "0";

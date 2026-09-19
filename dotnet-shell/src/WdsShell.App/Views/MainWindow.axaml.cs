@@ -19,6 +19,7 @@ namespace WdsShell.App.Views;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
+    private readonly string? _initialScanPath;
 
     // Source 与列只能在代码里建：TreeDataGrid 11.1 没有 ItemsSource，列也不支持 XAML 声明。
     // 列可见性是设置项，改动时整体重建 source，故选中模型不是 readonly。
@@ -28,8 +29,9 @@ public partial class MainWindow : Window
     // 选中态在"树 → VM"与"VM → 树"两个方向之间来回传播，用这个开关掐掉回环。
     private bool _syncingSelection;
 
-    public MainWindow()
+    public MainWindow(string? initialScanPath = null)
     {
+        _initialScanPath = initialScanPath;
         // 必须用源生成器产出的 InitializeComponent：它除加载 XAML 外还会给 x:Name 字段赋值。
         // 若自行改写一个无参同名重载，XAML 仍能正常渲染，但 Treemap 会一直是 null。
         InitializeComponent();
@@ -45,7 +47,12 @@ public partial class MainWindow : Window
         ApplyBackdrop();
         ApplyPaneWidth();
         // 构造时窗口还没建 HWND，DWM 那次设材质要在显示之后再补一次才落得上。
-        Opened += (_, _) => ApplyBackdrop();
+        Opened += async (_, _) =>
+        {
+            ApplyBackdrop();
+            if (_initialScanPath is { } path)
+                await _vm.ScanFolderAsync(path);
+        };
         AppSettings.Current.PropertyChanged += OnSettingsChanged;
         Closed += (_, _) =>
         {
