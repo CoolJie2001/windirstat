@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""WdsShell 应用图标生成器 —— 全新设计，与上游 WinDirStat 的"饼图 + 树"没有任何关系。
+"""DiskScope 应用图标生成器 —— 全新设计，与上游 WinDirStat 的"饼图 + 树"没有任何关系。
 
 母题就是这款软件本身：一块 squarified 区块图，其中一格被点亮。
 

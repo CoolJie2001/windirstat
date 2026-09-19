@@ -2,6 +2,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <RootNamespace>WdsShell.App</RootNamespace>
+    <AssemblyName>DiskScope</AssemblyName>
+    <Product>DiskScope</Product>
+    <Title>DiskScope - Windows Disk Space Analyzer</Title>
+    <Description>Windows disk space analyzer with treemap visualization and cleanup tools.</Description>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>false</InvariantGlobalization>

@@ -50,6 +50,9 @@ public static partial class RecycleBin
             };
 
             var error = SHFileOperation(ref operation);
+            if (operation.AnyOperationsAborted != 0)
+                return new(path, false, "操作被 Windows Shell 中止");
+
             return error == 0
                 ? new(path, true, null)
                 : new(path, false, $"Windows Shell 错误码 {error}");

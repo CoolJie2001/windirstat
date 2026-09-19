@@ -20,6 +20,10 @@ public sealed partial class AppSettings : ObservableObject
 
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DiskScope", "settings.ini");
+
+    private static string LegacyFilePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "WdsShell", "settings.ini");
 
     /// <summary>对应上游 Options\DarkMode（默认 DM_USE_WINDOWS）。</summary>
@@ -86,7 +90,8 @@ public sealed partial class AppSettings : ObservableObject
         string[] lines;
         try
         {
-            lines = File.ReadAllLines(FilePath);
+            var path = File.Exists(FilePath) ? FilePath : LegacyFilePath;
+            lines = File.ReadAllLines(path);
         }
         catch
         {
@@ -160,7 +165,7 @@ public sealed partial class AppSettings : ObservableObject
 
     private IEnumerable<string> Lines()
     {
-        yield return "; WDS Shell settings. Key names follow upstream HKCU\\Software\\WinDirStat\\WinDirStat\\Options";
+        yield return "; DiskScope settings. Key names follow upstream HKCU\\Software\\WinDirStat\\WinDirStat\\Options";
         yield return "; This file is plain ASCII on purpose so any ini tool can read it.";
         yield return $"{nameof(DarkMode)}={DarkMode}";
         yield return $"{nameof(Backdrop)}={Backdrop}";

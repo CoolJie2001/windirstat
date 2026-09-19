@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://wds-shell.local/schema/cleanup-rulepack-v1.schema.json",
-  "title": "WDS Shell cleanup rule pack (v1)",
+  "$id": "https://diskscope.local/schema/cleanup-rulepack-v1.schema.json",
+  "title": "DiskScope cleanup rule pack (v1)",
   "description": "声明式清理规则包。运行时校验器（WdsShell.Core/Cleanup）是本 Schema 的超集：Schema 管结构，运行时还管硬否决策略与形状校验（见 02-safety-policy.md）。additionalProperties 处处为 false —— 未知字段必须报错，不能静默丢弃。",
   "type": "object",
   "additionalProperties": false,

@@ -9,8 +9,8 @@
         WindowStartupLocation="CenterScreen"
         TransparencyLevelHint="Mica, AcrylicBlur, Transparent"
         Background="Transparent"
-        Icon="avares://WdsShell.App/Assets/app.ico"
-        Title="WDS Shell — 磁盘空间可视化 (Preview)">
+        Icon="avares://DiskScope/Assets/app.ico"
+        Title="DiskScope — Windows Disk Space Analyzer (Preview)">
 
   <Design.DataContext>
     <vm:MainViewModel />
@@ -119,19 +119,33 @@
       <Border Grid.Row="1" CornerRadius="8" Padding="8"
               Background="{DynamicResource CardBrush}"
               BorderBrush="{DynamicResource CardStrokeBrush}" BorderThickness="1">
-        <Grid RowDefinitions="Auto,*" RowSpacing="6">
-          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+        <Grid RowDefinitions="Auto,Auto,*" RowSpacing="6">
+          <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="清理候选" FontWeight="SemiBold" VerticalAlignment="Center" />
             <TextBlock Grid.Column="1" Text="{Binding CleanupSummary}" Opacity="0.75"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <Button Grid.Column="2" Content="全选" Command="{Binding SelectAllCleanupCommand}" />
-            <Button Grid.Column="3" Content="清除选择" Command="{Binding ClearCleanupSelectionCommand}" />
-            <Button Grid.Column="4" Content="移入回收站"
-                    Command="{Binding MoveSelectedToRecycleBinCommand}"
+            <ProgressBar Grid.Column="2" Width="110" Height="8" VerticalAlignment="Center"
+                         Minimum="0" Maximum="100" Value="{Binding CleanupProgressPercent}"
+                         IsVisible="{Binding IsCleanupBusy}" />
+            <TextBlock Grid.Column="3" Text="{Binding CleanupProgressText}" FontSize="11"
+                       Opacity="0.8" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                       IsVisible="{Binding IsCleanupBusy}" />
+            <Button Grid.Column="4" Content="全选" Command="{Binding SelectAllCleanupCommand}"
                     IsEnabled="{Binding !IsCleanupBusy}" />
+            <Button Grid.Column="5" Content="清除选择" Command="{Binding ClearCleanupSelectionCommand}"
+                    IsEnabled="{Binding !IsCleanupBusy}" />
+            <Button Grid.Column="6" Content="{Binding CleanupActionText}"
+                    Command="{Binding MoveSelectedToRecycleBinCommand}"
+                    IsEnabled="{Binding CanMoveSelectedToRecycleBin}"
+                    ToolTip.Tip="先勾选要处理的文件；成功项会立即从列表移除，失败项会保留并显示原因。" />
           </Grid>
 
-          <ListBox Grid.Row="1" ItemsSource="{Binding CleanupItems}"
+          <TextBlock Grid.Row="1" Text="{Binding CleanupResultText}"
+                     FontSize="11" Opacity="0.85" TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding CleanupResultText}"
+                     IsVisible="{Binding HasCleanupResult}" />
+
+          <ListBox Grid.Row="2" ItemsSource="{Binding CleanupItems}"
                    Background="Transparent" BorderThickness="0">
             <ListBox.ItemTemplate>
               <DataTemplate>

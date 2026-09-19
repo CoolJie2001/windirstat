@@ -47,6 +47,12 @@ public partial class MainWindow : Window
         // 构造时窗口还没建 HWND，DWM 那次设材质要在显示之后再补一次才落得上。
         Opened += (_, _) => ApplyBackdrop();
         AppSettings.Current.PropertyChanged += OnSettingsChanged;
+        Closed += (_, _) =>
+        {
+            AppSettings.Current.PropertyChanged -= OnSettingsChanged;
+            _vm.PropertyChanged -= OnViewModelPropertyChanged;
+            _vm.Dispose();
+        };
     }
 
     private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)

@@ -1,6 +1,6 @@
-# WDS Shell — WinDirStat 现代化 .NET 前端（Avalonia）
+# DiskScope — Windows Disk Space Analyzer
 
-用 C# / Avalonia 重写的 WinDirStat 类磁盘可视化工具的外壳（Shell）脚手架。
+DiskScope 是一个用 C# / Avalonia 构建的 Windows 磁盘空间分析器，提供目录树、区块图可视化和清理候选分析。
 核心战略：**扫描引擎跟随上游 [windirstat/windirstat](https://github.com/windirstat/windirstat) 持续演进，
 本目录只维护 UI 与一层极薄的接口适配**（同步纪律见 [docs/UPSTREAM_SYNC.md](docs/UPSTREAM_SYNC.md)）。
 
@@ -23,7 +23,7 @@ dotnet-shell/
 │   └── WdsShell.App/              # Avalonia 应用（MVVM, CommunityToolkit.Mvvm）
 │       ├── ViewModels/MainViewModel.cs      # 250ms 节流快照刷新 + 目录树行管理
 │       ├── ViewModels/RowModels.cs          # TreeNodeRow：一个 DiskNode 对应一个行实例，懒展开
-│       ├── Services/AppSettings.cs          # 设置单例 + key=value 落盘（%APPDATA%\WdsShell\settings.ini）
+│       ├── Services/AppSettings.cs          # 设置单例 + key=value 落盘（%APPDATA%\DiskScope\settings.ini）
 │       ├── Views/MainWindow.axaml           # 左：TreeDataGrid 目录树 / 右：区块图
 │       ├── Views/SettingsWindow.axaml       # 工具栏"⚙ 设置…"打开的分页设置表
 │       └── Controls/                        # TreemapControl / ExtensionBarControl / TreeProportionBar 自绘
@@ -50,8 +50,9 @@ dotnet-shell/
 `CSettingsSheet`（`windirstat/Pages/`，8 页）。这里只做基础子集，页名与项名尽量对齐上游，
 每项在界面上都注明了它对应上游的哪个 setting。
 
-- **存储**：`%APPDATA%\WdsShell\settings.ini`，`key=value` 纯 ASCII 文本，键名对齐上游
-  `HKCU\Software\WinDirStat\WinDirStat\Options`。刻意不用反射式 JSON：项目开了 `PublishAot`，
+- **存储**：`%APPDATA%\DiskScope\settings.ini`，`key=value` 纯 ASCII 文本，键名对齐上游
+  `HKCU\Software\WinDirStat\WinDirStat\Options`。首次启动新版本时会兼容读取旧的
+  `%APPDATA%\WdsShell\settings.ini`。刻意不用反射式 JSON：项目开了 `PublishAot`，
   反射序列化器在裁剪后拿不到属性，会**静默**丢设置。上游另有便携模式（exe 旁 `WinDirStat.ini`），
   本 shell 暂未实现。
 - **生效时机**：外观 / 列可见性 / 面板宽度 / 区块图钳制 = 即时；扫描排除项与 `<Free Space>`

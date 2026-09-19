@@ -30,7 +30,6 @@ public sealed class CleanupAnalyzer : IDisposable
         if (_stop.IsCancellationRequested ||
             file.Attributes.HasFlag(FileAttributes.Directory) ||
             file.Attributes.HasFlag(FileAttributes.ReparsePoint) ||
-            file.Attributes.HasFlag(FileAttributes.Temporary) ||
             file.Attributes.HasFlag(FileAttributes.Offline)) return;
 
         try
@@ -85,7 +84,6 @@ public sealed class CleanupAnalyzer : IDisposable
         if (file.Attributes.HasFlag(FileAttributes.Hidden) ||
             file.Attributes.HasFlag(FileAttributes.System) ||
             file.Attributes.HasFlag(FileAttributes.ReadOnly) ||
-            file.Attributes.HasFlag(FileAttributes.Temporary) ||
             file.Attributes.HasFlag(FileAttributes.Offline)) return null;
 
         try
@@ -96,7 +94,6 @@ public sealed class CleanupAnalyzer : IDisposable
                 attributes.HasFlag(FileAttributes.Hidden) ||
                 attributes.HasFlag(FileAttributes.System) ||
                 attributes.HasFlag(FileAttributes.ReadOnly) ||
-                attributes.HasFlag(FileAttributes.Temporary) ||
                 attributes.HasFlag(FileAttributes.Offline)) return null;
 
             var info = new FileInfo(file.FullPath);

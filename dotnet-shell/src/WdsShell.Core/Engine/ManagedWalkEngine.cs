@@ -20,12 +20,13 @@ public sealed class ManagedWalkEngine : IDiskScanEngine
 
     public ScanOptions Options { get; }
 
-    // 目录侧不排除，故 AttributesToSkip 保持最小；文件侧的隐藏/受保护按属性逐条判定。
+    // 清理分析器需要看到临时文件，因此这里不提前丢弃 Temporary 属性。
+    // 隐藏/系统文件仍由扫描选项决定是否纳入，目录联接由目录侧单独处理。
     private readonly EnumerationOptions _enumerate = new()
     {
         RecurseSubdirectories = false,
         IgnoreInaccessible = true, // 无权限目录静默跳过（后续以 <Unknown> 伪节点呈现）
-        AttributesToSkip = FileAttributes.Temporary,
+        AttributesToSkip = FileAttributes.None,
     };
     private readonly FileAttributes _skipFileAttributes;
 

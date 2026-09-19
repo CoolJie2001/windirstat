@@ -38,6 +38,7 @@ public sealed partial class MainViewModel : ObservableObject
     private long _lastSig;
     private bool _force = true; // 强制刷新一次（导航、扫描状态变化后置位）
     private bool _wasScanning;
+    private bool _disposed;
 
     // 行对象按 DiskNode 全局复用：区块图给出一个 DiskNode 时，要能在树里找回同一个行实例，
     // 否则 TreeDataGrid 的选中/展开状态对不上。
@@ -59,10 +60,17 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _statusText = "就绪";
     [ObservableProperty] private string _idleHint = "就绪 · 单击区块或树行即可在此查看完整路径";
     [ObservableProperty] private bool _isScanning;
-    [ObservableProperty] private string _cleanupSummary = "扫描时自动识别可清理文件";
+    [ObservableProperty] private string _cleanupSummary = "扫描时识别 0 字节文件和典型垃圾扩展名";
     [ObservableProperty] private bool _isCleanupBusy;
+    [ObservableProperty] private int _cleanupProgressCurrent;
+    [ObservableProperty] private int _cleanupProgressTotal;
+    [ObservableProperty] private double _cleanupProgressPercent;
+    [ObservableProperty] private string _cleanupProgressText = string.Empty;
+    [ObservableProperty] private string _cleanupResultText = string.Empty;
     [ObservableProperty] private IReadOnlyList<TreemapTile> _treemapTiles = [];
     [ObservableProperty] private IReadOnlyList<ExtensionSegment> _extensionSegments = [];
+
+    private bool _suppressCleanupStateRefresh;
 
     // 全窗口只有一份选中项：区块图与目录树读写同一个 SelectedNode，任一侧改动都同步过去。
     // 树侧的"哪一行被选中"由视图自己持有（TreeDataGrid 的 selection model），不进 VM。
@@ -77,6 +85,20 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnIsScanningChanged(bool value) => IdleHint = value
         ? "正在扫描，路径随目录逐层落地"
         : "就绪 · 单击区块或树行即可在此查看完整路径";
+
+    partial void OnIsCleanupBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanMoveSelectedToRecycleBin));
+        OnPropertyChanged(nameof(CleanupActionText));
+    }
+
+    partial void OnCleanupResultTextChanged(string value) =>
+        OnPropertyChanged(nameof(HasCleanupResult));
+
+    public bool HasSelectedCleanupItems => CleanupItems.Any(static item => item.IsSelected);
+    public bool CanMoveSelectedToRecycleBin => !IsCleanupBusy && HasSelectedCleanupItems;
+    public string CleanupActionText => IsCleanupBusy ? "移入中…" : "移入回收站";
+    public bool HasCleanupResult => !string.IsNullOrWhiteSpace(CleanupResultText);
 
     partial void OnSelectedNodeChanged(DiskNode? value) => RaiseSelectionText();
     partial void OnHoveredNodeChanged(DiskNode? value) => RaiseSelectionText();
@@ -169,6 +191,18 @@ public sealed partial class MainViewModel : ObservableObject
         };
     }
 
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        _timer.Stop();
+        _engine?.Dispose();
+        _cleanupAnalyzer?.Dispose();
+        _engine = null;
+        _cleanupAnalyzer = null;
+    }
+
     [RelayCommand]
     private async Task ScanAsync()
     {
@@ -180,8 +214,10 @@ public sealed partial class MainViewModel : ObservableObject
         _engine?.Dispose();
         _cleanupAnalyzer?.Dispose();
         _cleanupAnalyzer = new CleanupAnalyzer(DefaultCleanupRules.Create());
-        CleanupItems.Clear();
-        CleanupSummary = "正在等待扫描结果…";
+        ClearCleanupItems();
+        CleanupSummary = "正在分析扫描文件…";
+        CleanupResultText = string.Empty;
+        CleanupProgressText = string.Empty;
         var options = Settings.ToScanOptions();
         _engine = NativeWdsEngine.IsAvailable(out _)
             ? new NativeWdsEngine()
@@ -364,74 +400,153 @@ public sealed partial class MainViewModel : ObservableObject
         if (_cleanupAnalyzer is null) return;
 
         foreach (var candidate in _cleanupAnalyzer.Drain())
-            CleanupItems.Add(new CleanupItemRow(candidate));
+        {
+            var row = new CleanupItemRow(candidate);
+            row.PropertyChanged += OnCleanupItemPropertyChanged;
+            CleanupItems.Add(row);
+        }
 
-        var selected = CleanupItems.Where(static item => item.IsSelected).ToArray();
-        var size = selected.Sum(static item => item.Candidate.Size);
-        CleanupSummary = CleanupItems.Count == 0
-            ? (IsScanning ? "扫描中：暂未发现可清理文件" : "没有发现符合默认规则的文件")
-            : $"发现 {CleanupItems.Count:N0} 个文件 · 已勾选 {selected.Length:N0} 个 · {SizeFormat.Format(size)}";
+        RefreshCleanupState();
     }
 
     [RelayCommand]
     private void SelectAllCleanup()
     {
-        foreach (var item in CleanupItems) item.IsSelected = true;
-        DrainCleanupCandidates();
+        SetCleanupSelection(true);
     }
 
     [RelayCommand]
     private void ClearCleanupSelection()
     {
-        foreach (var item in CleanupItems) item.IsSelected = false;
-        DrainCleanupCandidates();
+        SetCleanupSelection(false);
     }
 
     [RelayCommand]
     private async Task MoveSelectedToRecycleBinAsync()
     {
-        if (IsCleanupBusy) return;
+        if (!CanMoveSelectedToRecycleBin) return;
 
         var selected = CleanupItems.Where(static item => item.IsSelected).ToArray();
         if (selected.Length == 0) return;
 
         IsCleanupBusy = true;
+        CleanupProgressCurrent = 0;
+        CleanupProgressTotal = selected.Length;
+        CleanupProgressPercent = 0;
+        CleanupProgressText = $"正在移入回收站 0/{selected.Length:N0}";
+        CleanupResultText = string.Empty;
+        var succeeded = 0;
+        var failed = new List<RecycleResult>();
         try
         {
-            var results = await Task.Run(() => selected.Select(item =>
+            foreach (var item in selected)
             {
-                try
+                var displayName = Path.GetFileName(item.Candidate.FullPath);
+                CleanupProgressText =
+                    $"正在移入回收站 {CleanupProgressCurrent + 1:N0}/{CleanupProgressTotal:N0}：{displayName}";
+                var result = await Task.Run(() => MoveCandidate(item.Candidate));
+                CleanupProgressCurrent++;
+                CleanupProgressPercent = CleanupProgressTotal == 0
+                    ? 0
+                    : CleanupProgressCurrent * 100d / CleanupProgressTotal;
+
+                if (result.Succeeded)
                 {
-                    var info = new FileInfo(item.Candidate.FullPath);
-                    if (!info.Exists || info.Length != item.Candidate.Size ||
-                        info.LastWriteTimeUtc != item.Candidate.LastWriteTimeUtc)
-                        return new RecycleResult(item.Candidate.FullPath, false, "文件在预览后发生变化");
+                    succeeded++;
+                    RemoveCleanupItem(item);
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                else
                 {
-                    return new RecycleResult(item.Candidate.FullPath, false, ex.Message);
+                    failed.Add(result);
                 }
 
-                return RecycleBin.Move(item.Candidate.FullPath);
-            }).ToArray());
+                CleanupProgressText = $"正在移入回收站 {CleanupProgressCurrent:N0}/{CleanupProgressTotal:N0}";
+                RefreshCleanupState();
+            }
 
-            var succeeded = results.Where(static result => result.Succeeded)
-                .Select(static result => result.Path)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            for (var i = CleanupItems.Count - 1; i >= 0; i--)
-                if (succeeded.Contains(CleanupItems[i].Candidate.FullPath))
-                    CleanupItems.RemoveAt(i);
-
-            var failed = results.Length - succeeded.Count;
-            StatusText = failed == 0
-                ? $"已将 {succeeded.Count:N0} 个文件移入回收站，请重新扫描刷新目录树"
-                : $"已移入回收站 {succeeded.Count:N0} 个，{failed:N0} 个未处理";
-            DrainCleanupCandidates();
+            CleanupProgressText = $"处理完成：成功 {succeeded:N0} 个，失败 {failed.Count:N0} 个";
+            CleanupResultText = failed.Count == 0
+                ? "所有选中文件都已移入回收站。"
+                : $"有 {failed.Count:N0} 个文件未处理：{failed[0].Error ?? "Windows Shell 未返回错误原因"}";
+            StatusText = failed.Count == 0
+                ? $"已将 {succeeded:N0} 个文件移入回收站"
+                : $"已移入回收站 {succeeded:N0} 个，{failed.Count:N0} 个未处理";
+        }
+        catch (Exception ex)
+        {
+            CleanupProgressText = $"操作中断：已处理 {CleanupProgressCurrent:N0}/{CleanupProgressTotal:N0}";
+            CleanupResultText = ex.Message;
+            StatusText = $"移入回收站失败：{ex.Message}";
         }
         finally
         {
             IsCleanupBusy = false;
+            RefreshCleanupState();
         }
+    }
+
+    private static RecycleResult MoveCandidate(CleanupCandidate candidate)
+    {
+        try
+        {
+            var info = new FileInfo(candidate.FullPath);
+            if (!info.Exists || info.Length != candidate.Size ||
+                info.LastWriteTimeUtc != candidate.LastWriteTimeUtc)
+                return new(candidate.FullPath, false, "文件在预览后发生变化或已不存在");
+
+            return RecycleBin.Move(candidate.FullPath);
+        }
+        catch (Exception ex)
+        {
+            return new(candidate.FullPath, false, ex.Message);
+        }
+    }
+
+    private void SetCleanupSelection(bool selected)
+    {
+        _suppressCleanupStateRefresh = true;
+        try
+        {
+            foreach (var item in CleanupItems) item.IsSelected = selected;
+        }
+        finally
+        {
+            _suppressCleanupStateRefresh = false;
+        }
+
+        RefreshCleanupState();
+    }
+
+    private void OnCleanupItemPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!_suppressCleanupStateRefresh && e.PropertyName == nameof(CleanupItemRow.IsSelected))
+            RefreshCleanupState();
+    }
+
+    private void RemoveCleanupItem(CleanupItemRow item)
+    {
+        item.PropertyChanged -= OnCleanupItemPropertyChanged;
+        CleanupItems.Remove(item);
+    }
+
+    private void ClearCleanupItems()
+    {
+        foreach (var item in CleanupItems)
+            item.PropertyChanged -= OnCleanupItemPropertyChanged;
+        CleanupItems.Clear();
+        OnPropertyChanged(nameof(HasSelectedCleanupItems));
+        OnPropertyChanged(nameof(CanMoveSelectedToRecycleBin));
+    }
+
+    private void RefreshCleanupState()
+    {
+        var selected = CleanupItems.Where(static item => item.IsSelected).ToArray();
+        var size = selected.Sum(static item => item.Candidate.Size);
+        CleanupSummary = CleanupItems.Count == 0
+            ? (IsScanning ? "扫描中：暂未发现启发式候选" : "没有发现符合启发式规则的文件")
+            : $"发现 {CleanupItems.Count:N0} 个文件 · 已勾选 {selected.Length:N0} 个 · {SizeFormat.Format(size)}";
+        OnPropertyChanged(nameof(HasSelectedCleanupItems));
+        OnPropertyChanged(nameof(CanMoveSelectedToRecycleBin));
     }
 
     /// <summary>
